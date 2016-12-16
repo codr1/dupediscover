@@ -14,9 +14,12 @@ import com.vaadin.data.util.FilesystemContainer;
 import java.io.File;
 import com.vaadin.ui.HorizontalSplitPanel;
 import com.vaadin.ui.Button;
+import com.vaadin.ui.HorizontalLayout;
+import com.vaadin.ui.Notification;
 import com.vaadin.ui.TreeTable;
 import com.vaadin.ui.VerticalLayout;
 import com.vaadin.ui.VerticalSplitPanel;
+import com.vaadin.ui.TextField;
 import java.io.FilenameFilter;
 
 /**
@@ -39,7 +42,9 @@ public class DupeDiscoverUI extends UI {
     FilesystemContainer files = new FilesystemContainer( new File( "/" ), fileFilter, false );
     TreeTable availableDirectories = new TreeTable( "Directory Tree", files );
     Table selectedDirectories = new Table( "Selected Directories" );
-    Button startScan = new Button( "Start Scan" );
+    final Button startScan = new Button( "Start Scan" );
+    final Button cancelScan = new Button( "Cancel Scan" );
+    TextField progress = new TextField();
     
     
     @Override
@@ -48,19 +53,21 @@ public class DupeDiscoverUI extends UI {
         VerticalSplitPanel vSplitRight = new VerticalSplitPanel();
         VerticalLayout topRightVertical = new VerticalLayout();
         VerticalLayout topLeftVertical = new VerticalLayout();
+        HorizontalLayout topRightButtonRibbon = new HorizontalLayout();
         
         HorizontalSplitPanel hSplit = new HorizontalSplitPanel(vSplitLeft, vSplitRight);
         
         selectedDirectories.addContainerProperty( "Name", String.class, null );
         
-                
-        
-        //availableDirectories.addContainerProperty( "Add", Button.class, null );
         vSplitLeft.addComponent( topLeftVertical );
         vSplitRight.addComponent( topRightVertical );
         topLeftVertical.addComponent(availableDirectories);
         topRightVertical.addComponent(selectedDirectories);
-        topRightVertical.addComponent( startScan );
+        topRightVertical.addComponent(topRightButtonRibbon);
+        topRightButtonRibbon.addComponent( startScan );
+        topRightButtonRibbon.addComponent( cancelScan );
+        topRightButtonRibbon.addComponent(progress);
+        
         
         
         availableDirectories.setVisibleColumns("Name", "Last Modified");
@@ -72,12 +79,7 @@ public class DupeDiscoverUI extends UI {
         selectedDirectories.setWidth("100%");
         selectedDirectories.setHeight("100%");
         
-        //Object rowId = availableDirectories.addItemAfter(null);
-        //Item row = availableDirectories.getItem( rowId );
-        
-        //Property p_field1 = (Property) row.getItemProperty("Name");
-        //p_field1.setValue(rowId, "..");
-        
+        cancelScan.setEnabled(false);
         
         availableDirectories.addGeneratedColumn("add", new TreeTable.ColumnGenerator() {
             @Override
@@ -86,11 +88,15 @@ public class DupeDiscoverUI extends UI {
                 buttonAdd.addClickListener( new Button.ClickListener() {
                     @Override
                     public void buttonClick(Button.ClickEvent event) {
-                        //Notification.show( "Yeah!" + itemId.toString() + " ");
-                        Object targetItemId = selectedDirectories.addItem( );
-                        Item newRow = selectedDirectories.getItem( targetItemId );
-                        newRow.getItemProperty("Name").setValue( itemId.toString() );
                         
+                        Item queryRow = selectedDirectories.getItem(itemId);
+                        if( queryRow != null ) {
+                            Notification.show(" Directory already selected ");
+                            return;
+                        } 
+                        
+                        Item newRow = selectedDirectories.addItem( itemId );
+                        newRow.getItemProperty("Name").setValue( "boo" /*itemId.toString()*/ );  
                     }
                 });
                 return buttonAdd;
@@ -106,14 +112,27 @@ public class DupeDiscoverUI extends UI {
                     public void buttonClick( Button.ClickEvent event ) {
                         Object targetItemId = selectedDirectories.removeItem(itemId);
                     }
-                
-                
-                
                 });
                 return buttonRemove;
             }
         });
         
+        startScan.addClickListener( new Button.ClickListener() {
+            @Override
+            public void buttonClick(Button.ClickEvent event) {
+                cancelScan.setEnabled(true);
+                startScan.setEnabled(false);
+            }
+        });
+        
+        
+        cancelScan.addClickListener( new Button.ClickListener() {
+            @Override
+            public void buttonClick(Button.ClickEvent event) {
+                cancelScan.setEnabled(false);
+                startScan.setEnabled(true);
+            }
+        });
         setContent( hSplit );
         
         //selectedDirectories.setSelectable(true);
