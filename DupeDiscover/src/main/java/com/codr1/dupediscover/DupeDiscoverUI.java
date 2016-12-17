@@ -119,7 +119,7 @@ public class DupeDiscoverUI extends UI {
                             Notification.show("we did make it");
                             Item currentRow = selectedDirectories.getItem(id);
                             
-                            String currentDirectory = currentRow.getItemProperty("Name").toString();
+                            String currentDirectory = currentRow.getItemProperty("Name").getValue().toString();
                             
                             // check if we have exactly the same name
                             if( itemId.toString() == currentDirectory ){
