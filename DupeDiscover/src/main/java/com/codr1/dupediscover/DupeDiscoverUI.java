@@ -20,13 +20,15 @@ import com.vaadin.ui.TreeTable;
 import com.vaadin.ui.VerticalLayout;
 import com.vaadin.ui.VerticalSplitPanel;
 import com.vaadin.ui.TextField;
+import java.io.Console;
 import java.io.FilenameFilter;
+import java.util.Iterator;
 
 /**
  *
  */
 @Theme("mytheme")
-@Widgetset("com.mycompany.dupediscover.MyAppWidgetset")
+@Widgetset("com.codr1.dupediscover.MyAppWidgetset")
 public class DupeDiscoverUI extends UI {
 
     FilenameFilter fileFilter = new FilenameFilter() {
@@ -45,6 +47,23 @@ public class DupeDiscoverUI extends UI {
     final Button startScan = new Button( "Start Scan" );
     final Button cancelScan = new Button( "Cancel Scan" );
     TextField progress = new TextField();
+    
+    /*Thread scanThread = new Thread( new Runnable() {
+        @Override
+        public void run() {
+            // Check if there is anything to scan
+            if( selectedDirectories.size() < 1 ) {
+                Notification.show( "No directories have been selected to be scanned" );
+                return;
+            }
+            
+            
+            
+            
+            
+           
+        }
+    });*/
     
     
     @Override
@@ -66,7 +85,7 @@ public class DupeDiscoverUI extends UI {
         topRightVertical.addComponent(topRightButtonRibbon);
         topRightButtonRibbon.addComponent( startScan );
         topRightButtonRibbon.addComponent( cancelScan );
-        topRightButtonRibbon.addComponent(progress);
+        topRightButtonRibbon.addComponent( progress );
         
         
         
@@ -79,7 +98,9 @@ public class DupeDiscoverUI extends UI {
         selectedDirectories.setWidth("100%");
         selectedDirectories.setHeight("100%");
         
-        cancelScan.setEnabled(false);
+        setContent( hSplit );
+        
+        //cancelScan.setEnabled(false);
         
         availableDirectories.addGeneratedColumn("add", new TreeTable.ColumnGenerator() {
             @Override
@@ -89,14 +110,42 @@ public class DupeDiscoverUI extends UI {
                     @Override
                     public void buttonClick(Button.ClickEvent event) {
                         
-                        Item queryRow = selectedDirectories.getItem(itemId);
-                        if( queryRow != null ) {
-                            Notification.show(" Directory already selected ");
-                            return;
-                        } 
+                         
+                        // Check if we already selected a lower level or a higher level directory
+                        for( Iterator i = selectedDirectories.getItemIds().iterator(); i.hasNext();){
+                            System.err.println("I am here");
+                            Object tmp = i.next();
+                            int id = (Integer) tmp;
+                            Notification.show("we did make it");
+                            Item currentRow = selectedDirectories.getItem(id);
+                            
+                            String currentDirectory = currentRow.getItemProperty("Name").toString();
+                            
+                            // check if we have exactly the same name
+                            if( itemId.toString() == currentDirectory ){
+                                Notification.show(" Directory already selected ");
+                                return;
+                            }
+                            
+                            // check if the new directory is a parent directory of the existing entry
+                            
+                            if( currentDirectory.contains(itemId.toString())){
+                                // we remove the existing entry and put in the new entry
+                                selectedDirectories.removeItem(id);
+                                Notification.show( "Removed " + currentDirectory + " because we added its parent.");
+                            }
+                            
+                            // Check if the new directory is a sub directory of the existing directory
+                            if( itemId.toString().contains( currentDirectory )) {
+                                Notification.show( "Not adding " + itemId.toString() + " since its parent is already selected." );
+                                return;
+                            }
+                        }
                         
-                        Item newRow = selectedDirectories.addItem( itemId );
-                        newRow.getItemProperty("Name").setValue( "boo" /*itemId.toString()*/ );  
+                        
+                        Object newRowId = selectedDirectories.addItem( );
+                        Item newRow = selectedDirectories.getItem( newRowId );
+                        newRow.getItemProperty("Name").setValue( itemId.toString() );  
                     }
                 });
                 return buttonAdd;
@@ -110,7 +159,7 @@ public class DupeDiscoverUI extends UI {
                 buttonRemove.addClickListener( new Button.ClickListener() {
                     @Override
                     public void buttonClick( Button.ClickEvent event ) {
-                        Object targetItemId = selectedDirectories.removeItem(itemId);
+                        selectedDirectories.removeItem(itemId);
                     }
                 });
                 return buttonRemove;
@@ -133,7 +182,8 @@ public class DupeDiscoverUI extends UI {
                 startScan.setEnabled(true);
             }
         });
-        setContent( hSplit );
+        
+        
         
         //selectedDirectories.setSelectable(true);
     }
