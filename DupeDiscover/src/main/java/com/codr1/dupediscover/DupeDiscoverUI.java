@@ -20,9 +20,16 @@ import com.vaadin.ui.TreeTable;
 import com.vaadin.ui.VerticalLayout;
 import com.vaadin.ui.VerticalSplitPanel;
 import com.vaadin.ui.TextField;
-import java.io.Console;
 import java.io.FilenameFilter;
+import java.io.IOException;
+import java.nio.file.FileVisitResult;
+import static java.nio.file.FileVisitResult.CONTINUE;
+import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
 
 /**
  *
@@ -40,6 +47,32 @@ public class DupeDiscoverUI extends UI {
             //throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
         }
     };
+    
+    
+    public static class Finder 
+            extends SimpleFileVisitor<Path> {
+        
+        void processFile( Path file ) {
+            
+        }
+        
+        // Process each file .
+        @Override
+        public FileVisitResult visitFile(Path file,
+                BasicFileAttributes attrs) {
+            processFile (file);
+            return CONTINUE;
+        }
+        
+        // Handle error
+        @Override
+        public FileVisitResult visitFileFailed(Path file,
+                IOException exc) {
+            System.err.println(exc);
+            return CONTINUE;
+        }
+        
+    }
             
     FilesystemContainer files = new FilesystemContainer( new File( "/" ), fileFilter, false );
     TreeTable availableDirectories = new TreeTable( "Directory Tree", files );
@@ -48,7 +81,7 @@ public class DupeDiscoverUI extends UI {
     final Button cancelScan = new Button( "Cancel Scan" );
     TextField progress = new TextField();
     
-    /*Thread scanThread = new Thread( new Runnable() {
+    Thread scanThread = new Thread( new Runnable() {
         @Override
         public void run() {
             // Check if there is anything to scan
@@ -59,11 +92,19 @@ public class DupeDiscoverUI extends UI {
             
             
             
+            //Iterate through the slected directories
+            for( Iterator i = selectedDirectories.getItemIds().iterator(); i.hasNext();){
+                
+            }
+            
+            
+            
+            
             
             
            
         }
-    });*/
+    });
     
     
     @Override
@@ -100,6 +141,10 @@ public class DupeDiscoverUI extends UI {
         
         setContent( hSplit );
         
+        final Notification notify = new Notification("hi");
+        notify.setDelayMsec(20000);
+        
+        
         //cancelScan.setEnabled(false);
         
         availableDirectories.addGeneratedColumn("add", new TreeTable.ColumnGenerator() {
@@ -110,38 +155,47 @@ public class DupeDiscoverUI extends UI {
                     @Override
                     public void buttonClick(Button.ClickEvent event) {
                         
-                         
+                        // In case we have to delete a row...  you can't delete while iterating,
+                        // so we store the item ids in this list and delete once we are all done.
+                        List<Object> toDelete = new ArrayList<Object>();
+                        //This string will store the names of all deleted directories
+                        String deletedDirectories = new String();
+                        
                         // Check if we already selected a lower level or a higher level directory
                         for( Iterator i = selectedDirectories.getItemIds().iterator(); i.hasNext();){
-                            System.err.println("I am here");
-                            Object tmp = i.next();
-                            int id = (Integer) tmp;
-                            Notification.show("we did make it");
+                            int id = (Integer) i.next();
                             Item currentRow = selectedDirectories.getItem(id);
                             
                             String currentDirectory = currentRow.getItemProperty("Name").getValue().toString();
                             
                             // check if we have exactly the same name
-                            if( itemId.toString() == currentDirectory ){
-                                Notification.show(" Directory already selected ");
+                            if( itemId.toString().equals( currentDirectory ) ){
+                                notify.show(" Directory already selected ");
                                 return;
                             }
                             
                             // check if the new directory is a parent directory of the existing entry
-                            
                             if( currentDirectory.contains(itemId.toString())){
-                                // we remove the existing entry and put in the new entry
-                                selectedDirectories.removeItem(id);
-                                Notification.show( "Removed " + currentDirectory + " because we added its parent.");
+                                // we can't remove the item yet while we are iterating.  we will store it and remove it later
+                                toDelete.add((Object)id);
+                                deletedDirectories = deletedDirectories.concat( "\n" + currentDirectory + "\n");
                             }
                             
                             // Check if the new directory is a sub directory of the existing directory
                             if( itemId.toString().contains( currentDirectory )) {
-                                Notification.show( "Not adding " + itemId.toString() + " since its parent is already selected." );
+                                notify.show( "Not adding " + itemId.toString() + " since its parent is already selected." );
                                 return;
                             }
                         }
                         
+                        //Check if we have any items slated for deletion and take them out
+                        for (Object id : toDelete) {        
+                            selectedDirectories.removeItem(id);
+                        }
+                        if( deletedDirectories.isEmpty() == false ){
+                            notify.show( "Since we added their parent directory, the following have been removed:\n"+ deletedDirectories );
+                            
+                        }
                         
                         Object newRowId = selectedDirectories.addItem( );
                         Item newRow = selectedDirectories.getItem( newRowId );
