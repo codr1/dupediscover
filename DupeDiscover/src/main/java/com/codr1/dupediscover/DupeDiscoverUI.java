@@ -1,7 +1,6 @@
 package com.codr1.dupediscover;
-
+import com.vaadin.annotations.Push;
 import javax.servlet.annotation.WebServlet;
-
 import com.vaadin.annotations.Theme;
 import com.vaadin.annotations.VaadinServletConfiguration;
 import com.vaadin.annotations.Widgetset;
@@ -22,22 +21,31 @@ import com.vaadin.ui.VerticalSplitPanel;
 import com.vaadin.ui.TextField;
 import java.io.FilenameFilter;
 import java.io.IOException;
+import java.nio.file.FileVisitOption;
+import static java.nio.file.FileVisitOption.FOLLOW_LINKS;
 import java.nio.file.FileVisitResult;
 import static java.nio.file.FileVisitResult.CONTINUE;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.Iterator;
 import java.util.List;
 
 /**
  *
  */
+@Push
 @Theme("mytheme")
 @Widgetset("com.codr1.dupediscover.MyAppWidgetset")
 public class DupeDiscoverUI extends UI {
-
+    static long currentTime = System.currentTimeMillis() / 1000;
+    static long oldTime = System.currentTimeMillis() / 1000; 
+    static Integer  numberFilesScanned = 0;
+    
     FilenameFilter fileFilter = new FilenameFilter() {
         @Override
         public boolean accept(File dir, String name) {
@@ -48,30 +56,97 @@ public class DupeDiscoverUI extends UI {
         }
     };
     
-    
-    public static class Finder 
+    void processFile( final Path file ) {
+        numberFilesScanned++;
+        currentTime = System.currentTimeMillis() / 1000;
+        if( currentTime > oldTime ){ 
+            access( new Runnable() {
+                @Override
+                public void run() {
+                    currentFileBox.setValue(file.toString());
+                    numberFilesBox.setValue( numberFilesScanned.toString() );
+                }
+            });
+            oldTime = currentTime;
+        }
+    }
+   
+    public /*static*/ class Finder 
             extends SimpleFileVisitor<Path> {
         
-        void processFile( Path file ) {
-            
-        }
+        
         
         // Process each file .
         @Override
-        public FileVisitResult visitFile(Path file,
-                BasicFileAttributes attrs) {
+        public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
             processFile (file);
-            return CONTINUE;
+            if( Thread.currentThread().isInterrupted() ){
+                return FileVisitResult.TERMINATE;
+            }
+            return FileVisitResult.CONTINUE;
         }
         
         // Handle error
         @Override
-        public FileVisitResult visitFileFailed(Path file,
-                IOException exc) {
+        public FileVisitResult visitFileFailed(Path file, IOException exc) {
             System.err.println(exc);
+            if( Thread.currentThread().isInterrupted() ){
+                return FileVisitResult.TERMINATE;
+            }
             return CONTINUE;
+            
         }
         
+    }
+    
+    class ScanThread extends Thread {
+        @Override
+        public void run() {
+            // Check if there is anything to scan
+            if( selectedDirectories.size() < 1 ) {
+                access( new Runnable() {
+                    @Override
+                    public void run() {
+                        Notification.show( "No directories have been selected to be scanned" );
+
+                        startScan.setEnabled(true);
+                        cancelScan.setEnabled(false);
+                        
+                    }
+                });
+                return;
+            }
+            
+            numberFilesScanned = 0;
+            //Iterate through the slected directories
+            for( Iterator i = selectedDirectories.getItemIds().iterator(); i.hasNext();){
+                Item currentRow = selectedDirectories.getItem( (Integer) i.next() );            
+                String currentDirectory = currentRow.getItemProperty("Name").getValue().toString();
+                Path path = Paths.get(currentDirectory);
+
+                // Try to follow all links
+                EnumSet<FileVisitOption> opts = EnumSet.of(FOLLOW_LINKS);
+
+                Finder finder = new Finder();
+                try {
+                    Files.walkFileTree( path, opts, Integer.MAX_VALUE, finder );
+                } catch ( IOException e ) {
+                    System.err.println( "we got an IOException" + e );
+                }
+            }
+            
+            access( new Runnable() {
+                    @Override
+                    public void run() {
+                        Notification.show( "Scan Completed!" );
+
+                        startScan.setEnabled(true);
+                        cancelScan.setEnabled(false);
+                        currentFileBox.setValue("Scan Completed");
+                        
+                    }
+                });
+        }
     }
             
     FilesystemContainer files = new FilesystemContainer( new File( "/" ), fileFilter, false );
@@ -79,32 +154,16 @@ public class DupeDiscoverUI extends UI {
     Table selectedDirectories = new Table( "Selected Directories" );
     final Button startScan = new Button( "Start Scan" );
     final Button cancelScan = new Button( "Cancel Scan" );
-    TextField progress = new TextField();
+    final TextField currentFileBox = new TextField();
+    final TextField numberFilesBox = new TextField();
     
-    Thread scanThread = new Thread( new Runnable() {
-        @Override
-        public void run() {
-            // Check if there is anything to scan
-            if( selectedDirectories.size() < 1 ) {
-                Notification.show( "No directories have been selected to be scanned" );
-                return;
-            }
+    Thread scanThread;
+    
+    private void startScan() {
+        scanThread = new ScanThread();
             
-            
-            
-            //Iterate through the slected directories
-            for( Iterator i = selectedDirectories.getItemIds().iterator(); i.hasNext();){
-                
-            }
-            
-            
-            
-            
-            
-            
-           
-        }
-    });
+        scanThread.start();
+    }
     
     
     @Override
@@ -126,7 +185,8 @@ public class DupeDiscoverUI extends UI {
         topRightVertical.addComponent(topRightButtonRibbon);
         topRightButtonRibbon.addComponent( startScan );
         topRightButtonRibbon.addComponent( cancelScan );
-        topRightButtonRibbon.addComponent( progress );
+        topRightButtonRibbon.addComponent( numberFilesBox );
+        topRightButtonRibbon.addComponent( currentFileBox );
         
         
         
@@ -225,6 +285,13 @@ public class DupeDiscoverUI extends UI {
             public void buttonClick(Button.ClickEvent event) {
                 cancelScan.setEnabled(true);
                 startScan.setEnabled(false);
+                // Scan thread really shouldn't be alive if I can click on this
+                if( scanThread != null && scanThread.isAlive()) {
+                    notify.show("Active scanning thread is alive!");
+                } else {
+                    startScan();
+                    notify.show("Scan started!");
+                }
             }
         });
         
@@ -232,8 +299,23 @@ public class DupeDiscoverUI extends UI {
         cancelScan.addClickListener( new Button.ClickListener() {
             @Override
             public void buttonClick(Button.ClickEvent event) {
+                
                 cancelScan.setEnabled(false);
                 startScan.setEnabled(true);
+                
+                //Technically this should be the case... but just in case
+                if( scanThread !=null && scanThread.isAlive()) {
+                    scanThread.interrupt();
+                    try{
+                        scanThread.join();
+                    } catch (InterruptedException e ){
+                        notify.show( "Getting interrupted up in here!" );
+                    }
+                  notify.show("Successfully cancelled scan!");
+                } else {
+                    notify.show("Successfully cancelled scan, but no scan thread was actually running");
+                }
+                
             }
         });
         
