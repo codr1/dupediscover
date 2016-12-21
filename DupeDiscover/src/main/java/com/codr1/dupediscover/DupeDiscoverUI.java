@@ -1,4 +1,9 @@
 package com.codr1.dupediscover;
+//import com.google.common.collect.ArrayListMultimap;
+//import com.google.common.collect.Multimap;
+import com.google.gwt.thirdparty.guava.common.collect.Multimap;
+import com.google.gwt.thirdparty.guava.common.collect.ArrayListMultimap;
+
 import com.vaadin.annotations.Push;
 import javax.servlet.annotation.WebServlet;
 import com.vaadin.annotations.Theme;
@@ -13,6 +18,7 @@ import com.vaadin.data.util.FilesystemContainer;
 import java.io.File;
 import com.vaadin.ui.HorizontalSplitPanel;
 import com.vaadin.ui.Button;
+import com.vaadin.ui.GridLayout;
 import com.vaadin.ui.HorizontalLayout;
 import com.vaadin.ui.Notification;
 import com.vaadin.ui.TreeTable;
@@ -31,9 +37,11 @@ import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.EnumSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
 
 /**
  *
@@ -46,6 +54,8 @@ public class DupeDiscoverUI extends UI {
     static long oldTime = System.currentTimeMillis() / 1000; 
     static Integer  numberFilesScanned = 0;
     
+    Multimap<String,File> allFiles; 
+    
     FilenameFilter fileFilter = new FilenameFilter() {
         @Override
         public boolean accept(File dir, String name) {
@@ -56,9 +66,11 @@ public class DupeDiscoverUI extends UI {
         }
     };
     
-    void processFile( final Path file ) {
+    void processFile( final Path path ) {
+        final File file = path.toFile();
+         
         numberFilesScanned++;
-        currentTime = System.currentTimeMillis() / 1000;
+        currentTime = System.currentTimeMillis() / 500;
         if( currentTime > oldTime ){ 
             access( new Runnable() {
                 @Override
@@ -69,6 +81,13 @@ public class DupeDiscoverUI extends UI {
             });
             oldTime = currentTime;
         }
+       
+        
+        // if this is a directory we don't need it.
+        if( file.isDirectory() ) {
+            return;
+        }
+        allFiles.put( file.getName(), file );
     }
    
     public /*static*/ class Finder 
@@ -108,16 +127,14 @@ public class DupeDiscoverUI extends UI {
                     @Override
                     public void run() {
                         Notification.show( "No directories have been selected to be scanned" );
-
                         startScan.setEnabled(true);
                         cancelScan.setEnabled(false);
-                        
                     }
                 });
                 return;
             }
-            
             numberFilesScanned = 0;
+            
             //Iterate through the slected directories
             for( Iterator i = selectedDirectories.getItemIds().iterator(); i.hasNext();){
                 Item currentRow = selectedDirectories.getItem( (Integer) i.next() );            
@@ -135,6 +152,7 @@ public class DupeDiscoverUI extends UI {
                 }
             }
             
+            // When the scan is finished, lets update the UI. 
             access( new Runnable() {
                     @Override
                     public void run() {
@@ -143,7 +161,7 @@ public class DupeDiscoverUI extends UI {
                         startScan.setEnabled(true);
                         cancelScan.setEnabled(false);
                         currentFileBox.setValue("Scan Completed");
-                        
+                        numberFilesBox.setValue( numberFilesScanned.toString() );
                     }
                 });
         }
@@ -152,6 +170,7 @@ public class DupeDiscoverUI extends UI {
     FilesystemContainer files = new FilesystemContainer( new File( "/" ), fileFilter, false );
     TreeTable availableDirectories = new TreeTable( "Directory Tree", files );
     Table selectedDirectories = new Table( "Selected Directories" );
+    TreeTable foundDuplicates = new TreeTable( "Found Duplicates ");
     final Button startScan = new Button( "Start Scan" );
     final Button cancelScan = new Button( "Cancel Scan" );
     final TextField currentFileBox = new TextField();
@@ -170,48 +189,63 @@ public class DupeDiscoverUI extends UI {
     protected void init(VaadinRequest vaadinRequest) {
         VerticalSplitPanel vSplitLeft = new VerticalSplitPanel();
         VerticalSplitPanel vSplitRight = new VerticalSplitPanel();
-        VerticalLayout topRightVertical = new VerticalLayout();
+        GridLayout topRightGrid = new GridLayout( 5, 2 );
         VerticalLayout topLeftVertical = new VerticalLayout();
-        HorizontalLayout topRightButtonRibbon = new HorizontalLayout();
+        VerticalLayout bottomLeftVertical = new VerticalLayout();
         
         HorizontalSplitPanel hSplit = new HorizontalSplitPanel(vSplitLeft, vSplitRight);
         
         selectedDirectories.addContainerProperty( "Name", String.class, null );
         
         vSplitLeft.addComponent( topLeftVertical );
-        vSplitRight.addComponent( topRightVertical );
+        vSplitRight.addComponent( topRightGrid );
+        vSplitLeft.addComponent( bottomLeftVertical );
+        
         topLeftVertical.addComponent(availableDirectories);
-        topRightVertical.addComponent(selectedDirectories);
-        topRightVertical.addComponent(topRightButtonRibbon);
-        topRightButtonRibbon.addComponent( startScan );
-        topRightButtonRibbon.addComponent( cancelScan );
-        topRightButtonRibbon.addComponent( numberFilesBox );
-        topRightButtonRibbon.addComponent( currentFileBox );
         
-        
+        topRightGrid.addComponent(selectedDirectories, 0, 0, 4, 0);     
+       
+        topRightGrid.addComponent( startScan, 0, 1, 0, 1 );
+        topRightGrid.addComponent( cancelScan, 1, 1, 1, 1 );
+        topRightGrid.addComponent( numberFilesBox, 2, 1, 2, 1 );
+        topRightGrid.addComponent( currentFileBox, 3, 1, 4, 1 );
+        selectedDirectories.setWidth("100%");
+        selectedDirectories.setHeight("100%");
+        topRightGrid.setHeight("100%");
+        topRightGrid.setWidth("100%");
+        currentFileBox.setWidth( 36, Unit.EM);
+        topRightGrid.setRowExpandRatio(0, 1);
         
         availableDirectories.setVisibleColumns("Name", "Last Modified");
         availableDirectories.setColumnExpandRatio( "Name", 1 );
         availableDirectories.setColumnExpandRatio( "Last Modified", 0 );
+        
+        topLeftVertical.setHeight("100%");
+           
         availableDirectories.setWidth("100%");
         availableDirectories.setHeight("100%");
         
-        selectedDirectories.setWidth("100%");
-        selectedDirectories.setHeight("100%");
+        
+        
+        bottomLeftVertical.addComponent( foundDuplicates );
+        foundDuplicates.setHeight( "100%" );
+        foundDuplicates.setWidth( "100%" );
+        
+        foundDuplicates.addContainerProperty("File Name", String.class, null);
+        foundDuplicates.addContainerProperty("Directory", String.class, null);
+        foundDuplicates.addContainerProperty("Size", Integer.class, null);
         
         setContent( hSplit );
         
         final Notification notify = new Notification("hi");
         notify.setDelayMsec(20000);
         
-        
-        //cancelScan.setEnabled(false);
-        
-        availableDirectories.addGeneratedColumn("add", new TreeTable.ColumnGenerator() {
+        // Add a column with the add button to availableDirectories
+        availableDirectories.addGeneratedColumn("Add", new TreeTable.ColumnGenerator() {
             @Override
-            public Object generateCell(Table source, final Object itemId, Object columnId) {
+            public Object generateCell(Table source, final Object itemToAdd, Object columnId) {
                 Button buttonAdd = new Button("Check for Dupes");
-                buttonAdd.addClickListener( new Button.ClickListener() {
+                buttonAdd.addClickListener(new Button.ClickListener() {
                     @Override
                     public void buttonClick(Button.ClickEvent event) {
                         
@@ -221,6 +255,8 @@ public class DupeDiscoverUI extends UI {
                         //This string will store the names of all deleted directories
                         String deletedDirectories = new String();
                         
+                        String itemToAddName = itemToAdd.toString();
+                        
                         // Check if we already selected a lower level or a higher level directory
                         for( Iterator i = selectedDirectories.getItemIds().iterator(); i.hasNext();){
                             int id = (Integer) i.next();
@@ -229,21 +265,24 @@ public class DupeDiscoverUI extends UI {
                             String currentDirectory = currentRow.getItemProperty("Name").getValue().toString();
                             
                             // check if we have exactly the same name
-                            if( itemId.toString().equals( currentDirectory ) ){
+                            if( itemToAddName.equals( currentDirectory ) ){
                                 notify.show(" Directory already selected ");
                                 return;
                             }
                             
                             // check if the new directory is a parent directory of the existing entry
-                            if( currentDirectory.contains(itemId.toString())){
+                            if( currentDirectory.contains(itemToAdd.toString())){
                                 // we can't remove the item yet while we are iterating.  we will store it and remove it later
                                 toDelete.add((Object)id);
                                 deletedDirectories = deletedDirectories.concat( "\n" + currentDirectory + "\n");
                             }
                             
                             // Check if the new directory is a sub directory of the existing directory
-                            if( itemId.toString().contains( currentDirectory )) {
-                                notify.show( "Not adding " + itemId.toString() + " since its parent is already selected." );
+                            ////NOTE: We cant just check names since /hi and /hi22 will have a problem
+                            ////So we check with the parent of the current dierctory
+                            String parentPath = itemToAddName.substring(0, itemToAddName.lastIndexOf(File.separator));
+                            if( parentPath.length() > 0 && currentDirectory.contains( parentPath )) {
+                                notify.show("Not adding " + itemToAdd.toString() + " since its parent is already selected." );
                                 return;
                             }
                         }
@@ -259,14 +298,14 @@ public class DupeDiscoverUI extends UI {
                         
                         Object newRowId = selectedDirectories.addItem( );
                         Item newRow = selectedDirectories.getItem( newRowId );
-                        newRow.getItemProperty("Name").setValue( itemId.toString() );  
+                        newRow.getItemProperty("Name").setValue(itemToAddName );  
                     }
                 });
                 return buttonAdd;
             }
         });
         
-        selectedDirectories.addGeneratedColumn("remove", new TreeTable.ColumnGenerator() {
+        selectedDirectories.addGeneratedColumn("Remove", new TreeTable.ColumnGenerator() {
             @Override
             public Object generateCell(Table source, final Object itemId, Object columnId) {
                 Button buttonRemove = new Button( "Remove" );
@@ -285,12 +324,36 @@ public class DupeDiscoverUI extends UI {
             public void buttonClick(Button.ClickEvent event) {
                 cancelScan.setEnabled(true);
                 startScan.setEnabled(false);
+                allFiles = ArrayListMultimap.create();
+                
                 // Scan thread really shouldn't be alive if I can click on this
                 if( scanThread != null && scanThread.isAlive()) {
                     notify.show("Active scanning thread is alive!");
                 } else {
                     startScan();
                     notify.show("Scan started!");
+                }
+                                
+                try{
+                    scanThread.join();
+                } catch (InterruptedException e ){
+                    notify.show( "Getting interrupted up in here!" );
+                }
+                
+                currentFileBox.setValue( "Looking for duplicates..." );
+                
+                Set keySet = allFiles.keySet();
+                Iterator keyIter = keySet.iterator();
+                while( keyIter.hasNext() ){
+                    String key = (String) keyIter.next();
+                    Collection<File> values = allFiles.get( key );
+                    if( values.size() > 1 ) {
+                        for( File currentFile : values ) {
+                            foundDuplicates.addItem( new Object[]{currentFile.toString(), null, currentFile.length() } );
+                        }  
+                    }
+                    
+                    
                 }
             }
         });
