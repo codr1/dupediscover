@@ -1,9 +1,6 @@
 package com.codr1.dupediscover;
-//import com.google.common.collect.ArrayListMultimap;
-//import com.google.common.collect.Multimap;
 import com.google.gwt.thirdparty.guava.common.collect.Multimap;
 import com.google.gwt.thirdparty.guava.common.collect.ArrayListMultimap;
-
 import com.vaadin.annotations.Push;
 import javax.servlet.annotation.WebServlet;
 import com.vaadin.annotations.Theme;
@@ -101,6 +98,7 @@ public class DupeDiscoverUI extends UI {
                     //Nothing happens 
                    
                 } else {
+                    Notification.show("Thank you!  Please close this window");
                     System.exit(0);
                 }
             }
@@ -496,7 +494,7 @@ public class DupeDiscoverUI extends UI {
                             }
                             
                             // check if the new directory is a parent directory of the existing entry
-                            if( currentDirectory.contains(itemToAdd.toString())){
+                            if( new File(currentDirectory).getParent().contains(itemToAdd.toString())){
                                 // we can't remove the item yet while we are iterating.  we will store it and remove it later
                                 toDelete.add((Object)id);
                                 deletedDirectories = deletedDirectories.concat( "\n" + currentDirectory + "\n");
