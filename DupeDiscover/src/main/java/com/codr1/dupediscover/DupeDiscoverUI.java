@@ -15,11 +15,14 @@ import com.vaadin.ui.UI;
 import com.vaadin.ui.Table;
 import com.vaadin.data.util.FilesystemContainer;
 import com.vaadin.data.util.TextFileProperty;
+import com.vaadin.server.FileResource;
 import com.vaadin.shared.ui.label.ContentMode;
+import com.vaadin.ui.AbstractField;
 import java.io.File;
 import com.vaadin.ui.HorizontalSplitPanel;
 import com.vaadin.ui.Button;
 import com.vaadin.ui.GridLayout;
+import com.vaadin.ui.Image;
 import com.vaadin.ui.Label;
 import com.vaadin.ui.Notification;
 import com.vaadin.ui.TreeTable;
@@ -68,14 +71,39 @@ public class DupeDiscoverUI extends UI {
 
     HorizontalSplitPanel hSplit;
     
+    FilenameFilter fileFilter = new FilenameFilter() {
+        @Override
+        public boolean accept(File dir, String name) {
+            File file = new File( dir.getAbsolutePath() + "/" + name );
+            return file.isDirectory();
+            
+            //throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+        }
+    };
+    
+    FilesystemContainer files = new FilesystemContainer( new File( "/" ), fileFilter, false );
+    TreeTable availableDirectories = new TreeTable( "Directory Tree", files );
+    Table selectedDirectories = new Table( "Selected Directories" );
+    TreeTable foundDuplicates = new TreeTable( "Found Duplicates ");
+    final Button startScan = new Button( "Start Scan" );
+    final Button cancelScan = new Button( "Cancel Scan" );
+    final TextField currentFileBox = new TextField();
+    final TextField numberFilesBox = new TextField();
+
+    Label preview = new Label( "", ContentMode.HTML );
+    Image previewImage;
+
+    Thread scanThread;
+
+    
     void showInitialDialog() {
         String confirmMsg = 
-                "WARNING!  IMPROPER USE OF THIS PROGRAM COULD DAMAGE YOUR COMPUTER SYSTEM!!!<br>" +
+                "WARNING!  IMPROPER USE OF THIS PROGRAM COULD DAMAGE YOUR SYSTEM!!!<br>" +
                 "<b>PROCEED AT YOUR OWN RISK!  IF YOU ARE NOT COMFORTABLE PLEASE QUIT RIGHT AWAY!</b></br><br>" +
-                "This program is meant to help with photo and other file organization.  "+
-                "Even as I tried to have an organized repository of photos, I had many "+
-                "camera dumps and phone backups living on my systems.  Cleaning those out "+
-                "every several months was difficult and very very time consuming.<br>"+
+                "This program is meant to help with photo and other file organization and deduplication.  "+
+                "Even the most orgazined people with well structured photo repositories, often have "+
+                "many camera dumps and phone backups living on various systems.  Cleaning those out safely "+
+                "every several months is difficult and very very time consuming.<br>"+
                 "This program helps you identify duplicates quickly and choose the master copy in bulk.<br> "+
                 "<ol><li> Select directories to scan.  The list of selected directories appars in the top right pane. "+
                 "<li> Click the 'Scan' button.  The program will scan recursivelly and identify all duplicates " +
@@ -91,7 +119,7 @@ public class DupeDiscoverUI extends UI {
                 "<b> AT THIS TIMES DUPLICATE FILES WILL BE IREVOCABLY DELETED!  EXCERCISE CAUTION!</b>"+
                 "";
                
-        ConfirmDialog.show(this, confirmMsg, new ConfirmDialog.Listener() {
+        ConfirmDialog.show(this, "Usage", confirmMsg, "Accept and Continue",  "Exit", new ConfirmDialog.Listener() {
             @Override
             public void onClose(ConfirmDialog cd) {
                 if( cd.isConfirmed() ){
@@ -105,15 +133,17 @@ public class DupeDiscoverUI extends UI {
         }).setContentMode(ConfirmDialog.ContentMode.HTML);
     }
     
-    FilenameFilter fileFilter = new FilenameFilter() {
-        @Override
-        public boolean accept(File dir, String name) {
-            File file = new File( dir.getAbsolutePath() + "/" + name );
-            return file.isDirectory();
-            
-            //throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
-        }
-    };
+    
+    //This function is a wrapper which allows threads to update the main UI.
+    void updateStatusFromThread( final AbstractField field, final String text ){
+        access( new Runnable() {
+            @Override
+            public void run() {
+                field.setValue( text );
+                
+            }
+        });
+    }
     
     void processFile( final Path path ) {
         final File file = path.toFile();
@@ -121,13 +151,9 @@ public class DupeDiscoverUI extends UI {
         numberFilesScanned++;
         currentTime = System.currentTimeMillis() / 500;
         if( currentTime > oldTime ){ 
-            access( new Runnable() {
-                @Override
-                public void run() {
-                    currentFileBox.setValue(file.toString());
-                    numberFilesBox.setValue( numberFilesScanned.toString() );
-                }
-            });
+            updateStatusFromThread( currentFileBox, file.toString());
+            updateStatusFromThread(numberFilesBox, numberFilesScanned.toString());
+            
             oldTime = currentTime;
         }
        
@@ -166,6 +192,9 @@ public class DupeDiscoverUI extends UI {
     }
     
     class ScanThread extends Thread {
+    
+        
+        
         @Override
         public void run() {
             // Check if there is anything to scan
@@ -185,7 +214,9 @@ public class DupeDiscoverUI extends UI {
                     public void run() {
                         bottomLeftVertical.removeComponent(foundDuplicates);
                         buildFoundDuplicatesTable();
-                        bottomLeftVertical.addComponent(foundDuplicates);   
+                        
+                        // we are not going to add it back in quite yet.  lets see if it is faster that way
+                        //bottomLeftVertical.addComponent(foundDuplicates);   
                     }
                 });
             }
@@ -208,44 +239,53 @@ public class DupeDiscoverUI extends UI {
                 }
             }
             
-            access( new Runnable() {
-                @Override
-                public void run() {
-                    currentFileBox.setValue( "Parsing Results..." );
-           
-                    Set keySet = allFiles.keySet();
-                    Iterator keyIter = keySet.iterator();
-                    while( keyIter.hasNext() ){
-                        String key = (String) keyIter.next();
-                        Collection<File> values = allFiles.get( key );
-                        
-                        if( values.size() > 1 ) {
-                            Object newParent = null;
-                            Object newRow;
-                            for( File currentFile : values ) {
-                                String currentFileName = currentFile.getName();
-                        
-                                // Handle the first row (the parent row)
-                                if( newParent == null ) {
-                                    newParent = foundDuplicates.addItem( new Object[]{currentFileName, null, null }, null );
-                                    foundDuplicates.setCollapsed(newParent, false);
-                                }
-                                
-                                newRow = foundDuplicates.addItem( new Object[]{currentFileName, currentFile.getParent(), currentFile.length() }, 
-                                        currentFile.getAbsolutePath() );
-                                foundDuplicates.setParent( newRow, newParent );                  
-                            }  
+            updateStatusFromThread( currentFileBox, "Parsing Results...  This could take a bit");
+            updateStatusFromThread(numberFilesBox, numberFilesScanned.toString() );
+            
+
+
+            currentFileBox.setValue( "Parsing Results..." );
+
+            Set keySet = allFiles.keySet();
+            Iterator keyIter = keySet.iterator();
+            Integer i = 0;
+            while( keyIter.hasNext() ){
+                String key = (String) keyIter.next();
+                Collection<File> values = allFiles.get( key );
+
+                if( values.size() > 1 ) {
+                    Object newParent = null;
+                    Object newRow;
+                    for( File currentFile : values ) {
+                        String currentFileName = currentFile.getName();
+
+                        // Handle the first row (the parent row)
+                        if( newParent == null ) {
+                            newParent = foundDuplicates.addItem( new Object[]{currentFileName, null, null }, null );
+                            foundDuplicates.setCollapsed(newParent, false);
                         }
-                    }   
-                }    
-            });
+
+                        newRow = foundDuplicates.addItem( new Object[]{currentFileName, currentFile.getParent(), currentFile.length() }, 
+                                currentFile.getAbsolutePath() );
+                        foundDuplicates.setParent( newRow, newParent );                  
+                    }  
+                }
+                i++;
+                currentTime = System.currentTimeMillis() / 500;
+                if( currentTime > oldTime ){ 
+                    updateStatusFromThread(numberFilesBox, i.toString() + "/" + allFiles.size());
+                    oldTime = currentTime;
+                }
+            }    
+           
             
             // When the scan is finished, lets update the UI. 
             access( new Runnable() {
                 @Override
                 public void run() {
                     Notification.show( "Scan Completed!" );
-
+                    //add the table back in
+                    bottomLeftVertical.addComponent(foundDuplicates);   
                     startScan.setEnabled(true);
                     cancelScan.setEnabled(false);
                     currentFileBox.setValue("Scan Completed");
@@ -255,19 +295,6 @@ public class DupeDiscoverUI extends UI {
         }
     }
             
-    FilesystemContainer files = new FilesystemContainer( new File( "/" ), fileFilter, false );
-    TreeTable availableDirectories = new TreeTable( "Directory Tree", files );
-    Table selectedDirectories = new Table( "Selected Directories" );
-    TreeTable foundDuplicates = new TreeTable( "Found Duplicates ");
-    final Button startScan = new Button( "Start Scan" );
-    final Button cancelScan = new Button( "Cancel Scan" );
-    final TextField currentFileBox = new TextField();
-    final TextField numberFilesBox = new TextField();
-    
-    Label preview = new Label( "", ContentMode.HTML );
-    
-    Thread scanThread;
-    
     private void startScan() {
         scanThread = new ScanThread();
             
@@ -286,33 +313,51 @@ public class DupeDiscoverUI extends UI {
         foundDuplicates.addValueChangeListener(new ValueChangeListener() {
             @Override
             public void valueChange(Property.ValueChangeEvent event) {
-                Integer rowNumber = (Integer)event.getProperty().getValue(); 
-                Item selectedRow = foundDuplicates.getItem( rowNumber );
-                if( selectedRow.getItemProperty("Directory").getValue() == null ){
+                Property prop = event.getProperty();
+                if( prop == null ) {
+                    Notification.show( "Try again!");
+                    return;
+                }
+                
+                if( prop.getValue() == null ) {
+                    Notification.show( "...chill, bro!");
+                    return;
+                }
+                
+                String rowId = prop.getValue().toString(); 
+                Item selectedRow = foundDuplicates.getItem(rowId );
+                
+                if( selectedRow == null || selectedRow.getItemProperty("Directory") == null /*|| selectedRow.getItemProperty("Directory").getValue() == null*/ ){
                     Notification.show( "Please select an entry with a file and directory" );
                     return;
                 }
                 
                 String fileName = selectedRow.getItemProperty("Directory").getValue().toString()+ File.separator +selectedRow.getItemProperty("File Name").getValue().toString();
                 
+                if( preview != null && bottomRightVertical.getComponentIndex(preview) != -1 ){
+                    bottomRightVertical.removeComponent( preview );
+                    bottomRightVertical.removeAllComponents();
+                }
+                if( previewImage != null && bottomRightVertical.getComponentIndex(previewImage) != -1 ){
+                    bottomRightVertical.removeComponent( previewImage );
+                }
                 //Hack to handle images
                 if( fileName.toLowerCase().endsWith("png") ||  
                         fileName.toLowerCase().endsWith("jpg") || 
                         fileName.toLowerCase().endsWith("jpeg") || 
                         fileName.toLowerCase().endsWith("gif")
                 ) {
-                    if( preview.isAttached() ){
-                        bottomRightVertical.removeComponent( preview );
-                    }
-                    preview = new Label( "<img src=\"" + "file:////" + new File(fileName).getAbsolutePath() + "\"/> ", ContentMode.HTML );
-                    bottomRightVertical.addComponent(preview);
+                    FileResource fr = new FileResource( new File(fileName) );
+                    previewImage = new Image( "Preview", fr );
+                    bottomRightVertical.addComponent(previewImage);
+                    previewImage.setHeight("100%");
+                    previewImage.setWidth("100%");
                 } else { 
-                    if( preview.isAttached() ){
-                        bottomRightVertical.removeComponent( preview );
-                    }
+                    
                     preview = new Label( "", ContentMode.HTML );
                     preview.setPropertyDataSource( new TextFileProperty(new File( fileName ) ) );
                     bottomRightVertical.addComponent(preview);
+                    preview.setWidth("100%");
                 }
             }
         });
