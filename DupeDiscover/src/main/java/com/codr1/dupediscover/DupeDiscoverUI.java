@@ -1,5 +1,4 @@
 package com.codr1.dupediscover;
-import com.google.gwt.thirdparty.guava.common.collect.Multimap;
 import com.google.gwt.thirdparty.guava.common.collect.ArrayListMultimap;
 import com.vaadin.annotations.Push;
 import javax.servlet.annotation.WebServlet;
@@ -45,6 +44,7 @@ import java.util.Collection;
 import java.util.EnumSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.vaadin.dialogs.ConfirmDialog;
 
@@ -60,7 +60,7 @@ public class DupeDiscoverUI extends UI {
     static long oldTime = System.currentTimeMillis() / 1000; 
     static Integer  numberFilesScanned = 0;
     
-    Multimap<String,File> allFiles; 
+    ArrayListMultimap<String,File> allFiles; 
     
     VerticalSplitPanel vSplitLeft;
     VerticalSplitPanel vSplitRight;
@@ -246,12 +246,13 @@ public class DupeDiscoverUI extends UI {
 
             currentFileBox.setValue( "Parsing Results..." );
 
-            Set keySet = allFiles.keySet();
-            Iterator keyIter = keySet.iterator();
+            //Set keySet = allFiles.keySet();
+           // Set entrySet = allFiles.asMap().entrySet();
+           
             Integer i = 0;
-            while( keyIter.hasNext() ){
-                String key = (String) keyIter.next();
-                Collection<File> values = allFiles.get( key );
+            for( Map.Entry<String, Collection<File>> entry : allFiles.asMap().entrySet() ) {
+                String key = entry.getKey();
+                Collection<File> values = entry.getValue();
 
                 if( values.size() > 1 ) {
                     Object newParent = null;
