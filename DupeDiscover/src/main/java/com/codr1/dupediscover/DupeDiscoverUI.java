@@ -250,6 +250,7 @@ public class DupeDiscoverUI extends UI {
            // Set entrySet = allFiles.asMap().entrySet();
            
             Integer i = 0;
+            Integer rowsAdded = 0;
             for( Map.Entry<String, Collection<File>> entry : allFiles.asMap().entrySet() ) {
                 String key = entry.getKey();
                 Collection<File> values = entry.getValue();
@@ -269,7 +270,19 @@ public class DupeDiscoverUI extends UI {
                         newRow = foundDuplicates.addItem( new Object[]{currentFileName, currentFile.getParent(), currentFile.length() }, 
                                 currentFile.getAbsolutePath() );
                         foundDuplicates.setParent( newRow, newParent );                  
-                    }  
+                    }
+                    rowsAdded++;
+                    if( rowsAdded % 1000 == 0 ){
+                        final Integer rowsAddedf = rowsAdded;
+                        access( new Runnable() {
+                            @Override
+                            public void run() {
+                                Notification.show( rowsAddedf + " Added " );
+                                startScan.setEnabled(true);
+                                cancelScan.setEnabled(false);
+                            }
+                        });
+                    }
                 }
                 i++;
                 currentTime = System.currentTimeMillis() / 500;
