@@ -20,6 +20,7 @@ import com.vaadin.ui.AbstractField;
 import java.io.File;
 import com.vaadin.ui.HorizontalSplitPanel;
 import com.vaadin.ui.Button;
+import com.vaadin.ui.ComboBox;
 import com.vaadin.ui.GridLayout;
 import com.vaadin.ui.Image;
 import com.vaadin.ui.Label;
@@ -28,6 +29,7 @@ import com.vaadin.ui.TreeTable;
 import com.vaadin.ui.VerticalLayout;
 import com.vaadin.ui.VerticalSplitPanel;
 import com.vaadin.ui.TextField;
+import static java.io.File.separatorChar;
 import java.io.FilenameFilter;
 import java.io.IOException;
 import java.nio.file.FileVisitOption;
@@ -40,12 +42,13 @@ import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.EnumSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
+import javax.swing.filechooser.FileSystemView;
 import org.vaadin.dialogs.ConfirmDialog;
 
 /**
@@ -81,7 +84,7 @@ public class DupeDiscoverUI extends UI {
         }
     };
     
-    FilesystemContainer files = new FilesystemContainer( new File( "/" ), fileFilter, false );
+    FilesystemContainer files; 
     TreeTable availableDirectories = new TreeTable( "Directory Tree", files );
     Table selectedDirectories = new Table( "Selected Directories" );
     TreeTable foundDuplicates = new TreeTable( "Found Duplicates ");
@@ -133,6 +136,38 @@ public class DupeDiscoverUI extends UI {
         }).setContentMode(ConfirmDialog.ContentMode.HTML);
     }
     
+    void populateFileSystems( ) {
+        File[] paths;
+        FileSystemView fsv = FileSystemView.getFileSystemView();
+        String previousValue;
+        
+        // returns pathnames for files and directory
+        paths = File.listRoots();   
+
+        for( File path : paths ){ 
+            if( files == null ) {
+                files = new FilesystemContainer( path, false );
+            } else {
+                files.addRoot( path );
+            }
+        }
+        
+    /*    // if there is no previous Value, or the previous value is no longer in the list
+        // get the first item in the list.  Otherwise try to select the previously selected value
+        if( previousValue.isEmpty() || !pathsStringArray.contains( previousValue )){
+            fileSystems.select( pathsStringArray.get(0) );
+        } else {
+            
+            fileSystems.setValue( previousValue );
+        }
+        files = new FilesystemContainer( new File( fileSystems.getValue().toString() ), fileFilter, false );
+        */
+        availableDirectories.setContainerDataSource( files );
+        
+        //fileSystems.setNullSelectiofinAllowed(false);
+        
+      
+    }
     
     //This function is a wrapper which allows threads to update the main UI.
     void updateStatusFromThread( final AbstractField field, final String text ){
@@ -191,9 +226,8 @@ public class DupeDiscoverUI extends UI {
         }
     }
     
-    class ScanThread extends Thread {
     
-        
+    class ScanThread extends Thread {
         
         @Override
         public void run() {
@@ -471,6 +505,17 @@ public class DupeDiscoverUI extends UI {
     
     @Override
     protected void init(VaadinRequest vaadinRequest) {
+        
+        // Need to detect if we are in windows.  If we are, we need to show
+        // a drop-down with disk drives
+        String osName = System.getProperty("os.name");
+        if( osName.toLowerCase().contains( "win" ) ) {
+            // TODO: Lets see how the file systems list works before we add the
+            // windows check
+        }
+        
+        populateFileSystems();
+        
         vSplitLeft = new VerticalSplitPanel();
         vSplitRight = new VerticalSplitPanel();
         topRightGrid = new GridLayout( 5, 2 );
@@ -487,24 +532,21 @@ public class DupeDiscoverUI extends UI {
         vSplitLeft.addComponent( bottomLeftVertical );
         vSplitRight.addComponent( bottomRightVertical );
         
-        topLeftVertical.addComponent(availableDirectories);
+        topLeftVertical.addComponent( availableDirectories );
+        topRightGrid.addComponent( selectedDirectories, 0, 0, 4, 0 );     
         
-        topRightGrid.addComponent(selectedDirectories, 0, 0, 4, 0);     
-       
         topRightGrid.addComponent( startScan, 0, 1, 0, 1 );
         topRightGrid.addComponent( cancelScan, 1, 1, 1, 1 );
         topRightGrid.addComponent( numberFilesBox, 2, 1, 2, 1 );
         topRightGrid.addComponent( currentFileBox, 3, 1, 4, 1 );
-        selectedDirectories.setWidth("100%");
-        selectedDirectories.setHeight("100%");
+        
+        selectedDirectories.setWidth( "100%" );
+        selectedDirectories.setHeight( "100%" );
         topRightGrid.setHeight("100%");
         topRightGrid.setWidth("100%");
         currentFileBox.setWidth( 36, Unit.EM);
         topRightGrid.setRowExpandRatio(0, 1);
         
-        availableDirectories.setVisibleColumns("Name", "Last Modified");
-        availableDirectories.setColumnExpandRatio( "Name", 1 );
-        availableDirectories.setColumnExpandRatio( "Last Modified", 0 );
         
         topLeftVertical.setHeight("100%");
            
@@ -520,7 +562,26 @@ public class DupeDiscoverUI extends UI {
         final Notification notify = new Notification("hi");
         notify.setDelayMsec(20000);
         
+        availableDirectories.setImmediate( true );
+        
         showInitialDialog();
+        
+        
+        // Add a column with the file name that also handles drive letters to availbaleDirectories
+        availableDirectories.addGeneratedColumn("File", new TreeTable.ColumnGenerator() {
+            @Override
+            public Object generateCell(Table source, Object itemId, Object columnId) {
+                String fileName;
+                
+                fileName = itemId.toString();
+                int index = fileName.lastIndexOf(File.separatorChar);
+                if( index == ( fileName.length() - 1 ) ) {
+                    return fileName;
+                } else {
+                    return fileName.substring( index + 1 );
+                }
+            }
+        });
         
         // Add a column with the add button to availableDirectories
         availableDirectories.addGeneratedColumn("Add", new TreeTable.ColumnGenerator() {
@@ -587,6 +648,11 @@ public class DupeDiscoverUI extends UI {
             }
         });
         
+        availableDirectories.setVisibleColumns("File", "Last Modified", "Add");
+        availableDirectories.setColumnExpandRatio( "File", 1 );
+        availableDirectories.setColumnExpandRatio( "Last Modified", 0 );
+        
+        
         selectedDirectories.addGeneratedColumn("Remove", new TreeTable.ColumnGenerator() {
             @Override
             public Object generateCell(Table source, final Object itemId, Object columnId) {
@@ -617,8 +683,6 @@ public class DupeDiscoverUI extends UI {
                 }     
             }
         });
-        
-        
         
         
         cancelScan.addClickListener( new Button.ClickListener() {
